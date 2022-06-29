@@ -462,6 +462,25 @@ def convert_old_csv(infile, outfile):
 
                 writer.writerow(row.split())
 
+def plot_one(filename, row_num, in_degrees=False):
+    with open(filename, 'r') as f:
+        reader = csv.reader(f, delimiter=',', quoting=csv.QUOTE_NONNUMERIC)
+        time = []
+        data = []
+        for row in reader:
+            # print(row)
+            time.append(row[0])
+            data.append(row[row_num])
+            print('Time:' ,time)
+            print('Data:' ,data)
+
+        plt.figure(1)
+        if in_degrees:
+            plt.plot(time, np.rad2deg(data))
+        else:
+            plt.plot(time, data)
+        plt.grid()
+        plt.show()
 
 if __name__ == '__main__':
     # log_data('conv_test.csv')
@@ -469,5 +488,6 @@ if __name__ == '__main__':
     # plot_data('conv_logs/conv_test.csv')
     #plot_time_diff('test.csv')
 
-    plot_data('../logs/Daniel/4_linear_deltaRZ_new_11_19_35.csv', in_degrees=True, selector=('q', 'qd', 'pose', 'tcp_v', 'qt', 'qdt', 'qddt'))
-    plot_data_single_windows('../logs/Daniel/4_linear_deltaRZ_new_11_19_35.csv', in_degrees=True)
+    # plot_data('../logs/Daniel/4_linear_deltaRZ_new_11_19_35.csv', in_degrees=True, selector=('q', 'qd', 'pose', 'tcp_v', 'qt', 'qdt', 'qddt'))
+    # plot_data_single_windows('../logs/Daniel/4_linear_deltaRZ_new_11_19_35.csv', in_degrees=True)
+    plot_one('../logs/Daniel/1_elbow_30_13_07_21.csv', row_num=3, in_degrees=True)
