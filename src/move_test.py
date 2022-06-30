@@ -7,7 +7,7 @@ Created on Tue May 24 10:43:00 2022
 
 import robolib
 import numpy as np
-import plot_data
+import plot_data_old
 from datetime import datetime
 
 alpha = [1.570796327, 0, 0, 1.570796327, -1.570796327, 0]
