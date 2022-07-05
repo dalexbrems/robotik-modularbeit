@@ -19,7 +19,7 @@ class Plot():
         data = pd.read_csv(filename, sep=',', header=has_header)
         return data
 
-    def add_headers(self, filename):
+    def add_headers(self, filename, write=False):
         names = ['t', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6',
                  'qd1', 'qd2', 'qd3', 'qd4', 'qd5', 'qd6',
                  'x', 'y', 'z', 'rx','ry', 'rz',
@@ -30,7 +30,6 @@ class Plot():
 
         # should also work
         names = self.t + self.q + self.qd + self.pose + self.speed+ self.qt + self.qdt + self.qddt
-
         data = pd.read_csv(filename, sep=',', header=None)
 
         if data[0][0] == 't':
@@ -49,14 +48,6 @@ class Plot():
     def plot_columns(self, filename, columns, y_label_l=None, y_label_r=None, title=None, show_degrees=False):
         data = pd.read_csv(filename, sep=',', header=0)
 
-        def convert_ax2_to_degrees(ax):
-            """
-            Update second axis according with first axis.
-            """
-            y1, y2 = ax.get_ylim()
-            # print(y1, y2)
-            ax2.set_ylim(np.rad2deg(y1), np.rad2deg(y2))
-            ax2.figure.canvas.draw()
 
         ax = data.plot(x='t', y=columns, title=title)
 
@@ -72,7 +63,36 @@ class Plot():
             ax2.set_ylabel(y_label_r)
             ax2.set_zorder(0)
 
-            convert_ax2_to_degrees(ax)
+            self.convert_ax2_to_degrees(ax, ax2)
+
+    def plot_all(self, filename, show_degrees=False):
+        data = pd.read_csv(filename, sep=',', header=0)
+
+        columns = (self.q, self.qd, self.pose, self.speed, self.qt, self.qdt, self.qddt)
+
+
+        for c in columns:
+            ax = data.plot(x='t', y=c, title=filename)
+            ax.set_xlabel('t in s')
+            plt.grid(which='major', color='#666666', linestyle='-')
+            plt.minorticks_on()
+            plt.grid(which='minor', color='#999999', linestyle='-', alpha=0.2)
+            if show_degrees:
+
+                ax2 = ax.twinx()
+                ax2.set_ylabel('Degrees')
+                ax2.set_zorder(0)
+
+                self.convert_ax2_to_degrees(ax, ax2)
+
+    def convert_ax2_to_degrees(self, ax, ax2):
+        """
+        Update second axis according with first axis.
+        """
+        y1, y2 = ax.get_ylim()
+        # print(y1, y2)
+        ax2.set_ylim(np.rad2deg(y1), np.rad2deg(y2))
+        ax2.figure.canvas.draw()
 
     def rad_2_deg(self):
         pass
@@ -105,8 +125,8 @@ if __name__ == '__main__':
     plot = Plot()
 
     # post-processing
-    # plot.add_headers('logs/3_linear_deltaZ_new_11_11_17.csv')
-    # plot.reset_time('logs/3_linear_deltaZ_new_11_11_17_named.csv')
+    #plot.add_headers('logs/2_elbow_30_t_7_13_06_32.csv', write=False)
+    #plot.reset_time('logs/2_elbow_30_t_7_13_06_32_named.csv')
 
     # plotting
     # plot.plot_columns('logs/4_linear_deltaRZ_new_11_19_35_named_zeroed.csv', columns=plot.q,
@@ -115,7 +135,16 @@ if __name__ == '__main__':
     # plot.plot_columns('logs/1_elbow_30_13_07_21_named_zeroed.csv', columns=plot.q,
     #                    title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
 
-    plot.plot_columns('logs/3_linear_deltaZ_new_11_11_17_named_zeroed.csv', columns=plot.pose,
-                       title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
+    # plot.plot_columns('logs/1_elbow_30_13_07_21_named_zeroed.csv', columns=plot.q, show_degrees=True,
+    #                    title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
+    # plot.plot_columns('logs/3_linear_deltaZ_new_11_11_17_named_zeroed.csv', columns=plot.pose,
+    #                   title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
+    # plot.plot_columns('logs/2_elbow_30, t_4_13_10_53_named_zeroed.csv', columns=plot.q,
+    #                   title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
+
+    plot.plot_all('logs/1_elbow_30_13_07_21_named_zeroed.csv', show_degrees=True)
+    # plot.plot_all('logs/2_elbow_30, t_4_13_08_28_named_zeroed.csv', show_degrees=True)
+    # plot.plot_all('logs/3_linear_deltaZ_new_11_11_17_named_zeroed.csv', show_degrees=True)
+    # plot.plot_all('logs/4_linear_deltaRZ_new_11_19_35_named_zeroed.csv', show_degrees=True)
 
     plt.show()

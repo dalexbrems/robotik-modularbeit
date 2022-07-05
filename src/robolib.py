@@ -1,6 +1,6 @@
 import numpy as np
 
-from scipy.optimize import fsolve
+# from scipy.optimize import fsolve
 import matplotlib.pyplot as plt
 import socket
 import struct
@@ -11,8 +11,9 @@ import time
 
 np.set_printoptions(suppress=True)
 
+T_MAX = 30  # maximum duration for a robot movement
 
-class Robot():
+class Robot:
     def __init__(self, dh_table, q_home_offset, joint_direction, dh_classic=True):
         self.dh_table = dh_table
         self.q_home_offset = q_home_offset
@@ -32,11 +33,12 @@ class Robot():
 
         self.rec_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        try:
-            self.rec_sock.connect((self.HOST, self.RX_PORT))
-            self.send_sock.connect((self.HOST, self.TX_PORT))
-        except BlockingIOError:
-            print('Socket connection could not be established')
+        # try:
+        #     self.rec_sock.connect((self.HOST, self.RX_PORT))
+        #     self.send_sock.connect((self.HOST, self.TX_PORT))
+        # except BlockingIOError:
+        #     print('Socket connection could not be established')
+
         # self.theta = self.dh_table[3]
 
     def __repr__(self):
@@ -244,20 +246,6 @@ class Robot():
         sa = np.sin(alpha)
         ct = np.cos(theta)
         st = np.sin(theta)
-
-        # TODO: change comparison of irrational numbers in if statement
-        # r00 = 0 if theta == np.pi / 2 or theta == -np.pi / 2 else ct
-        # r01 = 0 if alpha == np.pi / 2 or alpha == -np.pi / 2 else -st * ca
-        # r02 = st * sa
-        # r03 = 0 if theta == np.pi / 2 or theta == -np.pi / 2 else a * ct
-        #
-        # r10 = st
-        # r11 = 0 if theta == np.pi / 2 or alpha == np.pi / 2 or theta == -np.pi / 2 or alpha == -np.pi / 2 else ct * ca
-        # r12 = 0 if theta == np.pi / 2 or theta == -np.pi / 2 else -ct * sa
-        # r13 = a * st
-        #
-        # r21 = sa
-        # r22 = 0 if alpha == np.pi / 2 or alpha == -np.pi / 2 else ca
 
         r00 = ct
         r01 = -st * ca
@@ -553,8 +541,7 @@ class Robot():
         
         sb = 492
         sp = struct.unpack('!dddddd', r[sb:sb + 8 * 6])
-        tcp_speed = np.array(sp) 
-    
+        tcp_speed = np.array(sp)
         
         return {'Message Size': a, 'Time': t, 'Joints': qn, 'QSpeeds': q_speed, 'Pose': pose, 'TCPSpeed': tcp_speed, 'Joints_t': qt, 'Speed_t': qdt, 'Accel_t': qddt}
 
@@ -568,48 +555,219 @@ class Robot():
             while time.time() <= t_begin + duration:
                 r = self.receive_data()
                 writer.writerow([r['Time'], *r['Joints'], *r['QSpeeds'], *r['Pose'], *r['TCPSpeed'], *r['Joints_t'], *r['Speed_t'], *r['Accel_t']])
-                # writer.writerow([r['Time'], r['Joints'], r['Pose'], r['Speed']])
-
-                # writer.writerow([r['Time']])
-#                cnt += 1
-#                if r['QSpeeds'].all() == 0 and time.time() >= t_begin + 1:
-#                    print('No speed detected, timestamp:', time.time())
-#                    break
 
 
-def bk_test():
-    """
-    Backward Kinematics
-    """
-    # gesucht: f(x) = 2 mit f(x) = sin(x) + x^3 + 3*x^2
+    def log_data_with_cmd(self, filename, move_cmd, cmd_args, duration=7, t_lead=1):
+        t_begin = time.time()
+        # cnt = 0
+        cmd_sent = False
 
-    x = np.arange(-4, 2, 0.01)
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
 
-    def f(x):
-        return np.sin(x) + x ** 3 + 3 * x ** 2
+            while time.time() <= t_begin + duration:
+                r = self.receive_data()
+                writer.writerow([r['Time'], *r['Joints'], *r['QSpeeds'], *r['Pose'], *r['TCPSpeed'], *r['Joints_t'],
+                                 *r['Speed_t'], *r['Accel_t']])
 
-    y = f(x)
+                # sends the command once when reaching the lead time
+                if time.time() >= t_lead and not cmd_sent:
+                    print(f'Command {move_cmd} was sent at {time.time()}.')
+                    cmd_sent = True
+                    move_cmd(*cmd_args)
 
-    plt.plot(x, y)
-    plt.ylim((-4, 4))
-    plt.grid()
+    #######  Compute Trajectories  #######
+    def trajectory(self, dq, v_max, a_max):
+        """
+        Compute a trajectory for the given drive angles without given duration.
+        First identify the leading axis and then compute switching times of all other axis.
 
-    def func(x):
-        return f(x) - 2
+        :param list dq: list of drive angles differences
+        :param float v_max: max. velocity of the leading axis (rad/s)
+        :param float a_max: max. acceleration of the leading axis (rad/s²)
+        :return: trajectory data for angle differences
+        :rtype: list(float)
+        """
 
-    x0 = -1
-    sol1 = fsolve(func, x0)
-    print(sol1)
-    plt.plot(sol1, f(sol1), 'ro')
+        # identify the leading axis (slowest axis)
 
-    x0 = -3
-    sol2 = fsolve(func, x0)
-    print(sol2)
-    plt.plot(sol2, f(sol2), 'ro')
+        t_total = 0      # total time
+        la = None        # leading axis
 
-    x0 = 5
-    sol3 = fsolve(func, x0)
-    print(sol3)
-    plt.plot(sol3, f(sol3), 'ro')
+        for ax in range(len(dq)):
+            t_ax = self.traj_sp(dq[ax], v_max, a_max)[2]
+            print(f'T_ax at {ax}: {t_ax}')
+            if t_ax > t_total:
+                t_total = t_ax  # new total time
+                la = ax         # new leading axis
 
-    plt.show()
+        sp_la = self.traj_sp(dq[la], v_max, a_max)      # switching points of the leading axis
+        print(f'Leading axis: {sp_la}')
+
+        # compute velocities and acceleration of other axis
+        v_a = np.zeros((6, 2))
+        for ax in range(len(dq)):
+            t_tot = sp_la[2]
+            t_s1 = sp_la[0]
+            v_B = dq[ax]/(t_tot - t_s1)
+            a_A = dq[ax]/(t_tot*t_s1 - t_s1**2)
+            v_a[ax, 0] = v_B
+            v_a[ax, 1] = a_A
+
+        print(v_a)
+
+        # get angle, velocity and acceleration of each axis for the given switching points
+        # time-discrete for the UR frequency of 8ms
+        ret_arr = np.array([])
+        for i, ax in enumerate(dq):
+            np.append(ret_arr, self.traj_data_points(ax, v_max=v_a[i, 0], a_max=v_a[i, 1], sp_la=sp_la))
+
+
+
+    def traj_data_points(self, dq, v_max, a_max, sp_la):
+        """
+        Returns angle, velocity and acceleration for a given single axis movement
+        discretized to 8ms steps
+
+        :param float dq: drive angle travel in radians
+        :param float v_max: max. velocity of the axis (rad/s)
+        :param float a_max: max. acceleration of the axis (rad/s²)
+        """
+        t_s_1 = sp_la[0]
+        t_s_2 = sp_la[1]
+        t_tot = sp_la[2]
+
+        dt = 0.008  # timestep
+
+        step_cnt = int(np.ceil(t_tot/dt))
+        print(f'Step count: {step_cnt}')
+
+
+
+        ret_array = []
+
+        # if dreieck
+        qs = 0.5 * dq
+        ts = np.sqrt((dq/a_max))
+        vs = np.sqrt(dq * a_max)
+
+        for s in range(step_cnt):
+            t = s * dt     # current timestep in ms
+
+            if t <= t_s_1:
+                qt = 0.5 * a_max * t**2
+                vt = a_max * t
+                at = a_max
+                ret_array.append([t, qt, vt, at])
+
+            if t > t_s_1:
+                qt = qs + (vs * t - ts) + (0.5 * a_max * (t - ts))
+
+
+
+        return np.array(ret_array)
+
+    def traj_sp(self, dq, v_max, a_max):
+        """
+        Computes the switching points for the given single axis movement
+
+        :param float dq: drive angle travel in radians
+        :param float v_max: max. velocity of the axis (rad/s)
+        :param float a_max: max. acceleration of the axis (rad/s²)
+
+        :return: (t_s_1, t_s_2, t_total)
+        :rtype: tuple
+        """
+
+        # distinguish between trapeziodal and triangle profile
+
+        q_limit = (v_max**2)/a_max
+        # triangle profile
+        if dq <= q_limit:
+            t_s_1 = np.sqrt(abs((dq/a_max)))  # switching time
+            t_s_2 = 0
+            t_total = 2*t_s_1
+            print('Triangle profile')
+        # trapezoidal profile
+        else:
+            print('Trapezoidal profile')
+            t_s_1 = v_max/a_max
+            t_s_2 = abs(dq/v_max)
+            t_total = t_s_1 + t_s_2
+
+        return t_s_1, t_s_2, t_total
+
+
+
+    def trajectory_t(self, dq, v_max, a_max, t):
+        pass
+
+    def sim_movej(self, q, q_target, a=1.4, v=1.05, t=0):
+        """
+        Own implementation of the ur 'movej' command.
+        Move to position (linear in joint space)
+
+        :param list q: current drive angles
+        :param list q_target: target drive angles
+        :param float a: joint acceleration of the leading axis (rad/s²)
+        :param float v: joint speed of leading axis (rad/s)
+        :param float t: time allocated for the movement (s)
+        :return: trajectory data
+        :rtype: list(list(float))
+        """
+
+        # get the drive angle difference
+        dq = q_target - q
+        # print(f'dq = {dq}')
+
+        # if no movement duration is specified
+        if t == 0:
+            traj = self.trajectory(dq, v_max=v, a_max=a)
+        elif t > 0 and t <= T_MAX:
+            traj = self.trajectory_t(dq, v_max=v, a_max=a, t=t)
+        else:
+            raise ValueError(f'The specified duration ({t}s) is too long. Max. {T_MAX}s')
+
+        # add the start position of the axes to the computed movements
+        for i, ax in enumerate(traj):
+            pass
+    #
+    def sim_movel(self, p, pse, a=1.2, v=0.25, t=0, r=0):
+        pass
+
+# def bk_test():
+#     """
+#     Backward Kinematics
+#     """
+#     # gesucht: f(x) = 2 mit f(x) = sin(x) + x^3 + 3*x^2
+#
+#     x = np.arange(-4, 2, 0.01)
+#
+#     def f(x):
+#         return np.sin(x) + x ** 3 + 3 * x ** 2
+#
+#     y = f(x)
+#
+#     plt.plot(x, y)
+#     plt.ylim((-4, 4))
+#     plt.grid()
+#
+#     def func(x):
+#         return f(x) - 2
+#
+#     x0 = -1
+#     sol1 = fsolve(func, x0)
+#     print(sol1)
+#     plt.plot(sol1, f(sol1), 'ro')
+#
+#     x0 = -3
+#     sol2 = fsolve(func, x0)
+#     print(sol2)
+#     plt.plot(sol2, f(sol2), 'ro')
+#
+#     x0 = 5
+#     sol3 = fsolve(func, x0)
+#     print(sol3)
+#     plt.plot(sol3, f(sol3), 'ro')
+#
+#     plt.show()
