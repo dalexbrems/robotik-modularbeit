@@ -33,13 +33,13 @@ class Robot:
 
         self.rec_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        # try:
-        #     self.rec_sock.connect((self.HOST, self.RX_PORT))
-        #     self.send_sock.connect((self.HOST, self.TX_PORT))
-        # except BlockingIOError:
-        #     print('Socket connection could not be established')
-
-        # self.theta = self.dh_table[3]
+        try:
+            self.rec_sock.connect((self.HOST, self.RX_PORT))
+            self.send_sock.connect((self.HOST, self.TX_PORT))
+        except BlockingIOError:
+            print('Socket connection could not be established')
+        
+        #self.theta = self.dh_table[3]
 
     def __repr__(self):
         retstring = 'This is a Representation of an 6 Axis UR3 Robot\n' \
@@ -483,7 +483,7 @@ class Robot:
         else:
             command = 'movej([{}, {}, {}, {}, {}, {}],' \
                       ' a={}, v={}, t={}, r={})\n'.format(*q, a, v, t, r)
-
+        print(command)
         self.send_sock.send(command.encode('ascii'))
 
     def movel(self, q, q_in_deg=False, isPose=False, a=1.4, v=1.05, t=0, r=0):
@@ -557,7 +557,7 @@ class Robot:
                 writer.writerow([r['Time'], *r['Joints'], *r['QSpeeds'], *r['Pose'], *r['TCPSpeed'], *r['Joints_t'], *r['Speed_t'], *r['Accel_t']])
 
 
-    def log_data_with_cmd(self, filename, move_cmd, cmd_args, duration=7, t_lead=1):
+    def log_data_with_movej(self, filename, pose=0, t=4, duration=7, t_lead=2):
         t_begin = time.time()
         # cnt = 0
         cmd_sent = False
@@ -571,10 +571,30 @@ class Robot:
                                  *r['Speed_t'], *r['Accel_t']])
 
                 # sends the command once when reaching the lead time
-                if time.time() >= t_lead and not cmd_sent:
-                    print(f'Command {move_cmd} was sent at {time.time()}.')
+                if time.time() >= t_begin + t_lead and not cmd_sent:
+                    print(f'Command was sent at {time.time()}.')
                     cmd_sent = True
-                    move_cmd(*cmd_args)
+                    self.movej(pose, isPose=False, t=t)
+    
+    def log_data_with_movel(self, filename, pose=0, t=4, duration=7, t_lead=2):
+        t_begin = time.time()
+        print(f'T begin: {time.localtime(t_begin)}')
+        # cnt = 0
+        cmd_sent = False
+    
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+    
+            while time.time() <= t_begin + duration:
+                r = self.receive_data()
+                writer.writerow([r['Time'], *r['Joints'], *r['QSpeeds'], *r['Pose'], *r['TCPSpeed'], *r['Joints_t'],
+                                 *r['Speed_t'], *r['Accel_t']])
+    
+                # sends the command once when reaching the lead time
+                if time.time() >= t_begin + t_lead and not cmd_sent:
+                    print(f'Command was sent at {time.localtime(time.time())}.')
+                    cmd_sent = True
+                    self.movel(pose, isPose=True, t=t)
 
     #######  Compute Trajectories  #######
     def trajectory(self, dq, v_max, a_max):

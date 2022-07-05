@@ -125,8 +125,8 @@ if __name__ == '__main__':
     plot = Plot()
 
     # post-processing
-    #plot.add_headers('logs/2_elbow_30_t_7_13_06_32.csv', write=False)
-    #plot.reset_time('logs/2_elbow_30_t_7_13_06_32_named.csv')
+    plot.add_headers('2_elbow_30, t_4_11_27_51.csv', write=False)
+    plot.reset_time('2_elbow_30, t_4_11_27_51_named.csv')
 
     # plotting
     # plot.plot_columns('logs/4_linear_deltaRZ_new_11_19_35_named_zeroed.csv', columns=plot.q,
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     # plot.plot_columns('logs/2_elbow_30, t_4_13_10_53_named_zeroed.csv', columns=plot.q,
     #                   title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
 
-    plot.plot_all('logs/1_elbow_30_13_07_21_named_zeroed.csv', show_degrees=True)
+    #plot.plot_all('2_elbow_30, t_4_11_27_51_named_zeroed.csv', show_degrees=True)
     # plot.plot_all('logs/2_elbow_30, t_4_13_08_28_named_zeroed.csv', show_degrees=True)
     # plot.plot_all('logs/3_linear_deltaZ_new_11_11_17_named_zeroed.csv', show_degrees=True)
     # plot.plot_all('logs/4_linear_deltaRZ_new_11_19_35_named_zeroed.csv', show_degrees=True)
