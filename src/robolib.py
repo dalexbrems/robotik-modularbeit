@@ -6,7 +6,7 @@ import socket
 import struct
 import csv
 import time
-# import pandas as pd
+import pandas as pd
 
 
 np.set_printoptions(suppress=True)
@@ -33,13 +33,11 @@ class Robot:
 
         self.rec_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        try:
-            self.rec_sock.connect((self.HOST, self.RX_PORT))
-            self.send_sock.connect((self.HOST, self.TX_PORT))
-        except BlockingIOError:
-            print('Socket connection could not be established')
-        
-        #self.theta = self.dh_table[3]
+        # try:
+        #     self.rec_sock.connect((self.HOST, self.RX_PORT))
+        #     self.send_sock.connect((self.HOST, self.TX_PORT))
+        # except BlockingIOError:
+        #     print('Socket connection could not be established')
 
     def __repr__(self):
         retstring = 'This is a Representation of an 6 Axis UR3 Robot\n' \
@@ -476,7 +474,7 @@ class Robot:
         if isPose:
             command = 'movej(p[{}, {}, {}, {}, {}, {}],' \
                       ' a={}, v={}, t={}, r={})\n'.format(*q, a, v, t, r)
-            
+
         elif q_in_deg:
             command = 'movej([d2r({}), d2r({}), d2r({}), d2r({}), d2r({}), d2r({})],' \
                       ' a={}, v={}, t={}, r={})\n'.format(*q, a, v, t, r)
@@ -491,7 +489,7 @@ class Robot:
             command = 'movel(p[{}, {}, {}, {}, {}, {}],' \
                       ' a={}, v={}, t={}, r={})\n'.format(*q, a, v, t, r)
             print(command)
-            
+
         elif q_in_deg:
             command = 'movel([d2r({}), d2r({}), d2r({}), d2r({}), d2r({}), d2r({})],' \
                       ' a={}, v={}, t={}, r={})\n'.format(*q, a, v, t, r)
@@ -515,11 +513,11 @@ class Robot:
         sb = 12  # Start byte
         dt = struct.unpack('!dddddd ', r[sb:sb + 8 * 6])
         qt = np.array(dt)
-        
+
         sb = 60  # Start byte
         ddt = struct.unpack('!dddddd ', r[sb:sb + 8 * 6])
         qdt = np.array(ddt)
-        
+
         sb = 108  # Start byte
         dddt = struct.unpack('!dddddd ', r[sb:sb + 8 * 6])
         qddt = np.array(dddt)
@@ -538,11 +536,11 @@ class Robot:
         d = struct.unpack('!dddddd', r[sb:sb + 8 * 6])
         pose = np.array(d)
         # print('Pose', pose)
-        
+
         sb = 492
         sp = struct.unpack('!dddddd', r[sb:sb + 8 * 6])
         tcp_speed = np.array(sp)
-        
+
         return {'Message Size': a, 'Time': t, 'Joints': qn, 'QSpeeds': q_speed, 'Pose': pose, 'TCPSpeed': tcp_speed, 'Joints_t': qt, 'Speed_t': qdt, 'Accel_t': qddt}
 
     def log_data(self, filename, duration=7):
@@ -575,26 +573,107 @@ class Robot:
                     print(f'Command was sent at {time.time()}.')
                     cmd_sent = True
                     self.movej(pose, isPose=False, t=t)
-    
+
     def log_data_with_movel(self, filename, pose=0, t=4, duration=7, t_lead=2):
         t_begin = time.time()
         print(f'T begin: {time.localtime(t_begin)}')
         # cnt = 0
         cmd_sent = False
-    
+
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
-    
+
             while time.time() <= t_begin + duration:
                 r = self.receive_data()
                 writer.writerow([r['Time'], *r['Joints'], *r['QSpeeds'], *r['Pose'], *r['TCPSpeed'], *r['Joints_t'],
                                  *r['Speed_t'], *r['Accel_t']])
-    
+
                 # sends the command once when reaching the lead time
                 if time.time() >= t_begin + t_lead and not cmd_sent:
                     print(f'Command was sent at {time.localtime(time.time())}.')
                     cmd_sent = True
                     self.movel(pose, isPose=True, t=t)
+
+    def sim_movej(self, q, q_target, a=1.4, v=1.05, t=0):
+        """
+        Own implementation of the ur 'movej' command.
+        Move to position (linear in joint space)
+
+        :param list q: current drive angles (rad)
+        :param list q_target: target drive angles (rad)
+        :param float a: joint acceleration of the leading axis (rad/s²)
+        :param float v: joint speed of leading axis (rad/s)
+        :param float t: time allocated for the movement (s)
+        :return: trajectory data of q, qd, qdd
+        :rtype: list(list(float))
+        """
+        a = abs(a)
+        v = abs(v)
+        # get the drive angle difference
+        dq = q_target - q
+        # print(f'dq = {dq}')
+
+        # this ensures priority of the duration parameter t over v and a
+        if t == 0:
+            traj = self.trajectory(dq, v_max=v, a_max=a)
+        elif t > 0 and t <= T_MAX:
+            traj = self.trajectory_t(dq, a_max=1.4, t=t)
+        else:
+            raise ValueError(f'The specified duration ({t}s) is too long. Max. {T_MAX}s')
+
+        # as the trajectory only computes the relative movement, add start angles to the data
+        for i, ax in enumerate(traj):
+            for dp in ax:
+                dp[1] += q[i]
+
+        return traj
+
+    def sim_movel(self, pose, pose_target, tcp_offset, a=1.2, v=0.25, t=0):
+        """
+        Own implementation of the ur 'movel' command.
+        Move the Tool Center Point linearly in space
+
+        :param list pose: current pose [x, y, z, rx, ry, rz] (m)
+        :param list pose_target: target pose [x, y, z, rx, ry, rz] (m)
+        :param list tcp_offset: offset of the TCP [x, y, z, rx, ry, rz] (m)
+        :param float v: TCP speed (m/s)
+        :param float a: TCP acceleration (m/s²)
+        :param float t: time allocated for the movement (s)
+        :return: trajectory data of q, qd, qdd and TCP pose
+        :rtype: list(list(float))
+        """
+
+        # remove the TCP offset from start and end pose to get the robot tcp
+        T_0_TCP = self.rpy_2_T(pose)     # Trafo Matrix from base to TCP
+        T_0_6 = np.dot(self.transl(tcp_offset[0], tcp_offset[1], tcp_offset[2]), T_0_TCP)
+
+        print(f'Pose with TCP offset removed: {self.T_2_rpy(T_0_6)}\nSomehow, the Rotations dont stay the same.'
+              f'Looks like a bug in T_2_rpy...')
+        pose = self.T_2_rpy(T_0_6)
+
+        T_0_TCP = self.rpy_2_T(pose_target)
+        T_0_6 = np.dot(self.transl(tcp_offset[0], tcp_offset[1], tcp_offset[2]), T_0_TCP)
+
+        print(f'Pose with TCP offset removed: {self.T_2_rpy(T_0_6)}\nSomehow, the Rotations dont stay the same.'
+              f'Looks like a bug in T_2_rpy...')
+        pose_target = self.T_2_rpy(T_0_6)
+
+        # get the pose difference
+        dp = pose_target - pose
+
+
+        # can use the same trajectory computation as for movej
+        if t == 0:
+            traj = self.trajectory(dp, v_max=v, a_max=a)
+        elif t > 0 and t <= T_MAX:
+            traj = self.trajectory_t(dp, a_max=1.4, t=t)
+        else:
+            raise ValueError(f'The specified duration ({t}s) is too long. Max. {T_MAX}s')
+
+        # as the trajectory only computes the relative movement, add start angles to the data
+        for i, ax in enumerate(traj):
+            for dp in ax:
+                dp[1] += pose[i]
 
     #######  Compute Trajectories  #######
     def trajectory(self, dq, v_max, a_max):
@@ -606,7 +685,7 @@ class Robot:
         :param float v_max: max. velocity of the leading axis (rad/s)
         :param float a_max: max. acceleration of the leading axis (rad/s²)
         :return: trajectory data for angle differences
-        :rtype: list(float)
+        :rtype: narray(narray(narray(floats)))
         """
 
         # identify the leading axis (slowest axis)
@@ -616,13 +695,13 @@ class Robot:
 
         for ax in range(len(dq)):
             t_ax = self.traj_sp(dq[ax], v_max, a_max)[2]
-            print(f'T_ax at {ax}: {t_ax}')
+            # print(f'T_ax at {ax}: {t_ax} secs.')
             if t_ax > t_total:
                 t_total = t_ax  # new total time
                 la = ax         # new leading axis
 
         sp_la = self.traj_sp(dq[la], v_max, a_max)      # switching points of the leading axis
-        print(f'Leading axis: {sp_la}')
+        print(f'Leading axis (ts_1, ts_2, t_total: {sp_la}')
 
         # compute velocities and acceleration of other axis
         v_a = np.zeros((6, 2))
@@ -633,18 +712,84 @@ class Robot:
             a_A = dq[ax]/(t_tot*t_s1 - t_s1**2)
             v_a[ax, 0] = v_B
             v_a[ax, 1] = a_A
+            print(v_a)
 
-        print(v_a)
+
+        # print(f'Velocities and Acceleration of all axes: {v_a}')
 
         # get angle, velocity and acceleration of each axis for the given switching points
         # time-discrete for the UR frequency of 8ms
-        ret_arr = np.array([])
+        ret_arr = []
         for i, ax in enumerate(dq):
-            np.append(ret_arr, self.traj_data_points(ax, v_max=v_a[i, 0], a_max=v_a[i, 1], sp_la=sp_la))
+            ret_arr.append(self.traj_data_points(ax, v_max=v_a[i, 0], a_max=v_a[i, 1], sp_la=sp_la))
+
+        return np.array(ret_arr, dtype=object)
+
+    def trajectory_t(self, dq, t, v_max=3, a_max=2.5):
+        """
+        Compute a trajectory for the given drive angles without given duration.
+        First identify the leading axis and then compute switching times of all other axis.
+
+        :param list dq: list of drive angles differences
+        :param float v_max: optional: max. velocity that one axis is allowed to reach (rad/s)
+        :param float a_max: optional: max. acceleration that one axis is allowed to reach(rad/s²)
+        :param float t: total duration of the movement
+        :return: trajectory data for angle differences
+        :rtype: narray(narray(narray(floats)))
+        """
 
 
+        ####### 25% approach #######
+        # this works as expected, but the profile observed in the lab was a triangle profile
 
-    def traj_data_points(self, dq, v_max, a_max, sp_la):
+        # compute v_B and a_A to achieve a duration of t secs
+        # slide 29: 25% profile (acceleration and deceleration phase take up 25% of the complete profile each
+        # t_s_1 = 0.25 * t     # first switching point is reached after 25% of the desired duration
+        # t_s_2 = 0.75 * t
+        #
+        # sp = [t_s_1, t_s_2, t]   # switching points
+        #
+        # v_a = np.zeros((6, 2))
+        # for ax in range(len(dq)):
+        #     # slide 29
+        #     v_B = (16 * dq[ax]) / (12 * t)
+        #     a_A = (16 * dq[ax]) / (3 * t**2)
+        #
+        #     # check if velocity and acceleration are safe
+        #     if v_B > v_max or a_A > a_max:
+        #         raise ValueError('The defined movement duration is to short. Velocity or acceleration of one or '
+        #                          'multiple axes would exceed maximum values')
+        #
+        #     v_a[ax, 0] = v_B
+        #     v_a[ax, 1] = a_A
+
+        # as the observed profile for a movej command with t=4 was a triangle: simple approach with switching points
+        # and maximum acceleration (slide 27)
+        t_s_1 = 0.5 * t     # first switching point is reached after 25% of the desired duration
+        sp = [t_s_1, 0, t]   # switching points
+
+        v_a = np.zeros((6, 2))
+        for ax in range(len(dq)):
+            # slide 29
+            v_B = dq[ax]/(t - t_s_1)
+            a_A = dq[ax]/(t * t_s_1 - t_s_1**2)
+            if v_B > v_max or a_A > a_max:
+                raise ValueError('The defined movement duration is to short. Velocity or acceleration of one or '
+                                 'multiple axes would exceed maximum values')
+            v_a[ax, 0] = v_B
+            v_a[ax, 1] = a_A
+
+        print(f'Velocities and Acceleration of all axes: {v_a}')
+
+        # get angle, velocity and acceleration of each axis for the given switching points
+        # time-discrete for the UR frequency of 8ms
+        ret_arr = []
+        for i, ax in enumerate(dq):
+            ret_arr.append(self.traj_data_points(ax, v_max=v_a[i, 0], a_max=v_a[i, 1], sp_la=sp))
+
+        return np.array(ret_arr, dtype=object)
+
+    def traj_data_points(self, dq, v_max, a_max, sp_la, t_fill=1):
         """
         Returns angle, velocity and acceleration for a given single axis movement
         discretized to 8ms steps
@@ -659,33 +804,101 @@ class Robot:
 
         dt = 0.008  # timestep
 
-        step_cnt = int(np.ceil(t_tot/dt))
-        print(f'Step count: {step_cnt}')
-
-
+        step_cnt = int(np.ceil(t_tot/dt)) + 10          # total number of steps that contain data
+        fill_step_cnt = int(np.ceil(t_fill/dt))    # number of data points to fill before and after the payload data
+        # print(f'Step count: {step_cnt}')
 
         ret_array = []
 
-        # if dreieck
-        qs = 0.5 * dq
-        ts = np.sqrt((dq/a_max))
-        vs = np.sqrt(dq * a_max)
+        # check if dq is approx. zero -> no movement, empty array
 
-        for s in range(step_cnt):
-            t = s * dt     # current timestep in ms
+        # rounds dq to 6 digits
+        if np.round(dq, 5) == 0:
+            for s in range(step_cnt):
+                t = s * dt  # current timestep in ms
+                ret_array.append([t, 0, 0, 0])
+            return ret_array
 
-            if t <= t_s_1:
-                qt = 0.5 * a_max * t**2
-                vt = a_max * t
-                at = a_max
-                ret_array.append([t, qt, vt, at])
+        print(f't_s_2 when entering traj_data_points: {t_s_2}')
+        # triangle profile
+        if t_s_2 == 0:
+            qs = 0.5 * dq
+            # ts = np.sqrt(abs(dq/a_max))
+            ts = t_s_1
+            vs = np.sqrt(abs(dq * a_max))
 
-            if t > t_s_1:
-                qt = qs + (vs * t - ts) + (0.5 * a_max * (t - ts))
+            # invert velocity for negative movements
+            if dq < 0:
+                vs = -vs
 
+            # ret_array.append([-dt, 0, 0, 0])
 
+            for s in range(step_cnt):
+                t = s * dt    # current timestep in ms
 
-        return np.array(ret_array)
+                # print(f'timestep: {t}, ts_1: {t_s_1}')
+                # slide 22
+                if t <= t_s_1:
+                    qt = 0.5 * a_max * t**2
+                    vt = a_max * t
+                    at = a_max
+                    ret_array.append([t, qt, vt, at])
+
+                # slide 23
+                if t > t_s_1 and t <= t_tot:
+
+                    # this adds the switching point so the transition of the triangle is correct
+                    # if t <= t_s_1 + dt:
+                    #     ret_array.append([ts, qs, vs, 0])
+
+                    # square the last term to achieve smoothing
+                    qt = qs + (vs * (t - ts)) - (0.5 * a_max * (t - ts) ** 2)
+                    vt = vs - a_max*(t - ts)
+                    at = -a_max
+                    ret_array.append([t, qt, vt, at])
+
+                if t > t_tot:
+                    qt = dq
+                    vt = 0
+                    at = 0
+                    ret_array.append([t, qt, vt, at])
+
+        # trapezoidal profile
+        else:
+            qs_1 = 0.5 * (v_max**2/a_max)
+            qs_2 = dq - qs_1
+
+            for s in range(step_cnt):
+                t = s * dt    # current timestep in ms
+
+                # section A
+                if t <= t_s_1:
+                    qt = 0.5 * a_max * t**2
+                    vt = a_max * t
+                    at = a_max
+                    ret_array.append([t, qt, vt, at])
+
+                # section B
+                if t > t_s_1 and t < t_s_2:
+                    qt = qs_1 + v_max * (t - t_s_1)
+                    vt = v_max
+                    at = 0
+                    ret_array.append([t, qt, vt, at])
+
+                # section C
+                if t >= t_s_2 and t <= t_tot:
+                    qt = qs_2 + (v_max + ((a_max/v_max) * dq)) * (t - t_s_2) - 0.5 * a_max * (t**2 - t_s_2**2)
+                    vt = v_max - a_max*(t - t_s_2)
+                    at = -a_max
+                    ret_array.append([t, qt, vt, at])
+
+                if t > t_tot:
+                    qt = dq
+                    vt = 0
+                    at = 0
+                    ret_array.append([t, qt, vt, at])
+
+        return ret_array
 
     def traj_sp(self, dq, v_max, a_max):
         """
@@ -703,11 +916,11 @@ class Robot:
 
         q_limit = (v_max**2)/a_max
         # triangle profile
-        if dq <= q_limit:
+        if abs(dq) <= q_limit:
             t_s_1 = np.sqrt(abs((dq/a_max)))  # switching time
             t_s_2 = 0
             t_total = 2*t_s_1
-            print('Triangle profile')
+            # print('Triangle profile')
         # trapezoidal profile
         else:
             print('Trapezoidal profile')
@@ -717,44 +930,47 @@ class Robot:
 
         return t_s_1, t_s_2, t_total
 
+    def traj_to_csv_movej(self, trajectories, filename):
+        # Todo: nice to have
 
+        q = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6']
+        qd = ['qd1', 'qd2', 'qd3', 'qd4', 'qd5', 'qd6']
+        # pose = ['x', 'y', 'z', 'rx', 'ry', 'rz']
+        qddt = ['qdd1', 'qdd2', 'qdd3', 'qdd4', 'qdd5', 'qdd6']
 
-    def trajectory_t(self, dq, v_max, a_max, t):
-        pass
+        # get time data for whole csv
+        # ret = pd.DataFrame(pd.DataFrame(data=trajectories[0]).iloc[:, 0])
 
-    def sim_movej(self, q, q_target, a=1.4, v=1.05, t=0):
-        """
-        Own implementation of the ur 'movej' command.
-        Move to position (linear in joint space)
+        ret = pd.DataFrame([item[0] for item in trajectories[0]], columns=['t'])
 
-        :param list q: current drive angles
-        :param list q_target: target drive angles
-        :param float a: joint acceleration of the leading axis (rad/s²)
-        :param float v: joint speed of leading axis (rad/s)
-        :param float t: time allocated for the movement (s)
-        :return: trajectory data
-        :rtype: list(list(float))
-        """
+        print(ret)
+        for i, traj in enumerate(trajectories):
+            df = pd.DataFrame(data=traj, columns=['t', 'q', 'qd', 'qdd'])
+            ret.insert(i+1, q[i], df.loc[:, 'q'])
+            ret.insert(i+2, qd[i], df.loc[:, 'qd'])
+            ret.insert(i+3, qddt[i], df.loc[:, 'qdd'])
+        ret.to_csv(filename, sep=',', index=False)
 
-        # get the drive angle difference
-        dq = q_target - q
-        # print(f'dq = {dq}')
+    def traj_to_csv_movel(self, trajectories, filename):
+        # Todo: nice to have
 
-        # if no movement duration is specified
-        if t == 0:
-            traj = self.trajectory(dq, v_max=v, a_max=a)
-        elif t > 0 and t <= T_MAX:
-            traj = self.trajectory_t(dq, v_max=v, a_max=a, t=t)
-        else:
-            raise ValueError(f'The specified duration ({t}s) is too long. Max. {T_MAX}s')
+        q = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6']
+        qd = ['qd1', 'qd2', 'qd3', 'qd4', 'qd5', 'qd6']
+        # pose = ['x', 'y', 'z', 'rx', 'ry', 'rz']
+        qddt = ['qdd1', 'qdd2', 'qdd3', 'qdd4', 'qdd5', 'qdd6']
 
-        # add the start position of the axes to the computed movements
-        for i, ax in enumerate(traj):
-            pass
-    #
-    def sim_movel(self, p, pse, a=1.2, v=0.25, t=0, r=0):
-        pass
+        # get time data for whole csv
+        # ret = pd.DataFrame(pd.DataFrame(data=trajectories[0]).iloc[:, 0])
 
+        ret = pd.DataFrame([item[0] for item in trajectories[0]], columns=['t'])
+
+        print(ret)
+        for i, traj in enumerate(trajectories):
+            df = pd.DataFrame(data=traj, columns=['t', 'q', 'qd', 'qdd'])
+            ret.insert(i+1, q[i], df.loc[:, 'q'])
+            ret.insert(i+2, qd[i], df.loc[:, 'qd'])
+            ret.insert(i+3, qddt[i], df.loc[:, 'qdd'])
+        ret.to_csv(filename, sep=',', index=False)
 # def bk_test():
 #     """
 #     Backward Kinematics

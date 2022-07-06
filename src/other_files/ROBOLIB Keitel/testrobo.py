@@ -47,9 +47,10 @@ fig1 = plt.figure()
 
 ax = fig1.add_axes([0.1, 0.1, 0.8, 0.8]) # main axes
 # qd3 bewegte Achse
-print(trj1)
-ax.plot(trj1[2][:,0], trj1[2][:,2], label="qd3")
-ax.plot(trj1[2][:,0], trj1[2][:,3], "-.k", label="qdd3")
+# print(trj1)
+ax.plot(trj1[2][:,0], trj1[2][:,1], label="q")
+ax.plot(trj1[2][:,0], trj1[2][:,2], label="qd")
+ax.plot(trj1[2][:,0], trj1[2][:,3], label="qdd")
 
 ax.set_xlabel("Zeit in s")
 ax.set_ylabel("Geschwindigkeit rad/s")
@@ -78,16 +79,17 @@ poseB = np.array([0.37058 , -0.37625, 0.27905, 1.789 , 0.706, -0.202 + 0.5])
 trj4 = robolib.moveL(poseA, poseB)
 
 # TCP-Geschwindigkeiten rz Ist
-fig4 = plt.figure()
+#fig4 = plt.figure()
 
-ax = fig4.add_axes([0.1, 0.1, 0.8, 0.8]) # main axes
 #ax.plot(timearray, tcpv1_array, label="TCP-vx")
 #ax.plot(timearray, tcpv2_array, label="TCP-vy")
-ax.plot(trj4[:,0], trj4[:,-1], label="TCP-v rz")
 
-ax.set_xlabel("Zeit in s")
-ax.set_ylabel("Geschwindigkeit rz")
-ax.set_title("moveL von A nach B\nTCP-rz-Geschwindigkeiten")
+# ax = fig4.add_axes([0.1, 0.1, 0.8, 0.8]) # main axes
+# ax.plot(trj4[:,0], trj4[:,-1], label="TCP-v rz")
+#
+# ax.set_xlabel("Zeit in s")
+# ax.set_ylabel("Geschwindigkeit rz")
+# ax.set_title("moveL von A nach B\nTCP-rz-Geschwindigkeiten")
 #plt.ylim(0, 0.6)
 plt.legend()    
 plt.show()

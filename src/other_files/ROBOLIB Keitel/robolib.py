@@ -293,7 +293,6 @@ def remove_tcp(pose, tcp_offset=0):
     # übergebene pose beinhaltet ja das eingestellte, stiftähnliche Werkzeug (den konfigurierten Tool Center Point)
     # eingestellter Tool Center Point: (X, Y, Z, rx, ry, rz):
     # np.array([0.02477, 0.003, 0.19922, 0, 0, 0])
-
     # Verwendung Default-Offset für Werkzeug, wie wir ihn als Gruppe eingestellt haben
     if type(tcp_offset)==int:
         if tcp_offset == 0:
@@ -309,7 +308,7 @@ def remove_tcp(pose, tcp_offset=0):
     T_0_6 = Tinv(T_0_6)
     # Ableiten der Pose (ohne Werkzeug) aus der ermittelten T_0_6-Trafomatrix:
     pose = T_2_rotvec(T_0_6)
-    
+
     #print("Neue Pose ohne TCP: ", pose)
     return pose
 
@@ -1204,7 +1203,8 @@ def moveJ(qstart, qend, a_max=0, v_max=0, t=0):
 
     # Korrektur der Gelenkwinkel     
     # der Startwinkel in rad wird auf die q-Spalten aller 6 Achsen draufaddiert
-    for i, achse in enumerate(TRJ):  
+    for i, achse in enumerate(TRJ):
+        print(achse)
         achse[:,1] += qstart[i]
             
         

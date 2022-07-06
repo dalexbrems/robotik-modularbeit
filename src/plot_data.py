@@ -13,6 +13,7 @@ class Plot():
         self.speed = ['sp1', 'sp2', 'sp3', 'sp4', 'sp5', 'sp6']
         self.qt = ['qt1', 'qt2', 'qt3', 'qt4', 'qt5', 'qt6']
         self.qdt = ['qdt1', 'qdt2', 'qdt3', 'qdt4', 'qdt5', 'qdt6']
+        self.qdd = ['qdd1', 'qdd2', 'qdd3', 'qdd4', 'qdd5', 'qdd6']
         self.qddt = ['qddt1', 'qddt2', 'qddt3', 'qddt4', 'qddt5', 'qddt6']
 
     def to_pd(self, filename, has_header=False):
@@ -48,7 +49,6 @@ class Plot():
     def plot_columns(self, filename, columns, y_label_l=None, y_label_r=None, title=None, show_degrees=False):
         data = pd.read_csv(filename, sep=',', header=0)
 
-
         ax = data.plot(x='t', y=columns, title=title)
 
         plt.grid(which='major', color='#666666', linestyle='-')
@@ -65,11 +65,13 @@ class Plot():
 
             self.convert_ax2_to_degrees(ax, ax2)
 
-    def plot_all(self, filename, show_degrees=False):
+    def plot_all(self, filename, cols=None, show_degrees=False):
         data = pd.read_csv(filename, sep=',', header=0)
 
-        columns = (self.q, self.qd, self.pose, self.speed, self.qt, self.qdt, self.qddt)
-
+        if cols is None:
+            columns = (self.q, self.qd, self.pose, self.speed, self.qt, self.qdt, self.qddt)
+        else:
+            columns = cols
 
         for c in columns:
             ax = data.plot(x='t', y=c, title=filename)
@@ -83,6 +85,27 @@ class Plot():
                 ax2.set_ylabel('Degrees')
                 ax2.set_zorder(0)
 
+                self.convert_ax2_to_degrees(ax, ax2)
+
+    def plot_four(self, filename, cols, show_degrees=False):
+        data = pd.read_csv(filename, sep=',', header=0)
+
+        # fig, ax = plt.subplots(2, 2, sharex='all') #, figsize=(12, 8)
+        fig = plt.figure(1)
+        fig.suptitle(filename)
+
+        for i, c in enumerate(cols):
+            ax = fig.add_subplot(221+i)
+            data.plot(x='t', y=cols[i], title=str(cols[i]), ax=ax)
+            ax.set_xlabel('t in s')
+            plt.grid(which='major', color='#666666', linestyle='-')
+            plt.minorticks_on()
+            plt.grid(which='minor', color='#999999', linestyle='-', alpha=0.2)
+
+            if show_degrees:
+                ax2 = ax.twinx()
+                ax2.set_ylabel('deg')
+                ax2.set_zorder(0)
                 self.convert_ax2_to_degrees(ax, ax2)
 
     def convert_ax2_to_degrees(self, ax, ax2):
@@ -120,30 +143,67 @@ class Plot():
         if y:
             plt.locator_params(axis='y', nbins=y, tight=True)
 
+    def plot_sim_data(self, traj_array):
+        fig = plt.figure(1)
+
+        for i, drive in enumerate(traj_array):
+            for info in range(1, 4):
+                plt.plot(traj_array[i][:, 0], traj_array[i][:, info])
+
+        plt.show()
+
+    def plot_sim_data_df(self, traj_array):
+        fig = plt.figure(1)
+
+        for i, drive in enumerate(traj_array):
+            df = pd.DataFrame(drive, columns=['t', 'q', 'qd', 'qdd'])
+        # for i, drive in enumerate(traj_array):
+        #     for info in range(1, 4):
+        #         plt.plot(traj_array[i][:, 0], traj_array[i][:, info])
+        #
+        # plt.show()
+            ax = df.plot(x='t', y=['q', 'qd', 'qdd'])
+            ax.set_xlabel('Time in s')
+            ax.set_title(f'Drive {i}')
+
+            plt.grid(which='major', color='#666666', linestyle='-')
+            plt.minorticks_on()
+            plt.grid(which='minor', color='#999999', linestyle='-', alpha=0.2)
+
+        plt.show()
+
 
 if __name__ == '__main__':
     plot = Plot()
 
     # post-processing
-    plot.add_headers('2_elbow_30, t_4_11_27_51.csv', write=False)
-    plot.reset_time('2_elbow_30, t_4_11_27_51_named.csv')
+    #plot.add_headers('2_elbow_30, t_4_11_27_51.csv', write=False)
+    #plot.reset_time('2_elbow_30, t_4_11_27_51_named.csv')
 
     # plotting
+
+    # plot.plot_columns('logs_05_07/4_movel_rz_0.7_11_42_33_named_zeroed.csv', columns=plot.q, show_degrees=True,
+    #                    title='Drive angles', y_label_l='Angle in rad', y_label_r='Angle in °')
+    # plot.plot_columns('logs_05_07/4_movel_rz_0.7_11_42_33_named_zeroed.csv', columns=plot.qd, show_degrees=True,
+    #                    title='Drive velocities', y_label_l='Velocity in rad/s', y_label_r='Velocity in °/s')
+    # plot.plot_columns('logs_05_07/4_movel_rz_0.7_11_42_33_named_zeroed.csv', columns=plot.qddt, show_degrees=True,
+    #                    title='Drive accelerations', y_label_l='Acceleration in rad/s²', y_label_r='Acceleration in °/s²')
+    # plot.plot_columns('logs_05_07/4_movel_rz_0.7_11_42_33_named_zeroed.csv', columns=plot.pose, show_degrees=True,
+    #                    title='Drive TCP', y_label_l='tcp')
+
+    # plot.plot_columns('logs/2_elbow_30, t_4_13_10_53_named_zeroed.csv', columns=plot.q,
+    #                   title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
+    # plot.plot_columns('logs/3_linear_deltaZ_new_11_11_17_named_zeroed.csv', columns=plot.pose,
+    #                   title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
     # plot.plot_columns('logs/4_linear_deltaRZ_new_11_19_35_named_zeroed.csv', columns=plot.q,
     #                  title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
 
-    # plot.plot_columns('logs/1_elbow_30_13_07_21_named_zeroed.csv', columns=plot.q,
-    #                    title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
-
-    # plot.plot_columns('logs/1_elbow_30_13_07_21_named_zeroed.csv', columns=plot.q, show_degrees=True,
-    #                    title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
-    # plot.plot_columns('logs/3_linear_deltaZ_new_11_11_17_named_zeroed.csv', columns=plot.pose,
-    #                   title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
-    # plot.plot_columns('logs/2_elbow_30, t_4_13_10_53_named_zeroed.csv', columns=plot.q,
-    #                   title='Motorwinkel', y_label_l='Rad', y_label_r='Grad')
-
-    #plot.plot_all('2_elbow_30, t_4_11_27_51_named_zeroed.csv', show_degrees=True)
-    # plot.plot_all('logs/2_elbow_30, t_4_13_08_28_named_zeroed.csv', show_degrees=True)
+    #
+    # plot.plot_all('logs_05_07/4_movel_rz_0.7_11_42_33_named_zeroed.csv', show_degrees=True)
+    plot.plot_all('logs_05_07/2_elbow_30_t_4_11_44_12_named_zeroed.csv', show_degrees=True)
+    # plot.plot_four('logs_05_07/2_elbow_30_t_4_11_44_12_named_zeroed.csv', cols=(plot.q, plot.qd, plot.qddt, plot.pose),
+    #                show_degrees=True)
+    #plot.plot_all('sers.csv', cols=(plot.q, plot.qd, plot.qdd), show_degrees=True)
     # plot.plot_all('logs/3_linear_deltaZ_new_11_11_17_named_zeroed.csv', show_degrees=True)
     # plot.plot_all('logs/4_linear_deltaRZ_new_11_19_35_named_zeroed.csv', show_degrees=True)
 
